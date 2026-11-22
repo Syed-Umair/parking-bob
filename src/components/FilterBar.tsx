@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search } from "lucide-react";
 
 export default function FilterBar() {
   const router = useRouter();
@@ -22,16 +21,15 @@ export default function FilterBar() {
   const [vehicleSize, setVehicleSize] = useState(
     searchParams.get("vehicle_size") ?? ""
   );
-  const [maxRate, setMaxRate] = useState(
-    searchParams.get("max_rate") ?? ""
-  );
+  const [maxRate, setMaxRate] = useState(searchParams.get("max_rate") ?? "");
 
   function applyFilters() {
     const params = new URLSearchParams();
     if (area.trim()) params.set("area", area.trim());
     if (vehicleSize && vehicleSize !== "all") params.set("vehicle_size", vehicleSize);
     if (maxRate.trim()) params.set("max_rate", maxRate.trim());
-    router.push(`${pathname}?${params.toString()}`);
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
   function clearFilters() {
@@ -41,33 +39,36 @@ export default function FilterBar() {
     router.push(pathname);
   }
 
+  const hasFilters = area.trim() || (vehicleSize && vehicleSize !== "all") || maxRate.trim();
+
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-2">
-      <div className="flex-1">
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+
+      {/* Area */}
+      <div className="relative flex-1">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">
           Area
-        </label>
+        </span>
         <Input
-          placeholder="e.g. Koramangala"
+          placeholder="Koramangala, HSR Layout…"
           value={area}
           onChange={(e) => setArea(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+          className="pl-12 text-sm"
         />
       </div>
 
-      <div className="w-full sm:w-40">
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">
-          Vehicle
-        </label>
+      {/* Vehicle */}
+      <div className="w-full sm:w-36">
         <Select
           value={vehicleSize || "all"}
           onValueChange={(v) => setVehicleSize(v === null || v === "all" ? "" : v)}
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Any" />
+          <SelectTrigger className="text-sm">
+            <SelectValue placeholder="Any vehicle" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any</SelectItem>
+            <SelectItem value="all">Any vehicle</SelectItem>
             <SelectItem value="bike">Bike</SelectItem>
             <SelectItem value="car">Car</SelectItem>
             <SelectItem value="suv">SUV</SelectItem>
@@ -75,27 +76,31 @@ export default function FilterBar() {
         </Select>
       </div>
 
-      <div className="w-full sm:w-36">
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">
-          Max rate (₹/hr)
-        </label>
+      {/* Max rate */}
+      <div className="relative w-full sm:w-32">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">
+          Max ₹
+        </span>
         <Input
           type="number"
-          placeholder="e.g. 50"
+          placeholder="80"
           value={maxRate}
           onChange={(e) => setMaxRate(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+          className="pl-12 text-sm"
         />
       </div>
 
-      <div className="flex gap-2">
-        <Button onClick={applyFilters} className="gap-1.5">
-          <Search className="h-3.5 w-3.5" />
+      {/* Buttons */}
+      <div className="flex shrink-0 gap-2">
+        <Button size="sm" onClick={applyFilters} className="text-xs">
           Search
         </Button>
-        <Button variant="outline" onClick={clearFilters}>
-          Clear
-        </Button>
+        {hasFilters && (
+          <Button size="sm" variant="ghost" onClick={clearFilters} className="text-xs text-muted-foreground">
+            Clear
+          </Button>
+        )}
       </div>
     </div>
   );

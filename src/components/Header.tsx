@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useAuth, useClerk, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { Car, PlusCircle } from "lucide-react";
+import { Car, Plus } from "lucide-react";
 import AddSpotModal from "./AddSpotModal";
 
 export default function Header() {
-  const { isSignedIn, userId } = useAuth();
+  const { isSignedIn } = useAuth();
   const { openSignIn, user } = useClerk();
   const [addSpotOpen, setAddSpotOpen] = useState(false);
 
@@ -24,47 +24,57 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Car className="h-4 w-4 text-primary-foreground" />
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary">
+              <Car className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-base font-bold tracking-tight text-foreground">
-                parkingBob
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                Smarter Streets, Better Living
-              </span>
-            </div>
+            <span className="text-sm font-bold tracking-tight text-foreground">
+              parkingBob
+            </span>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Desktop label */}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={handleListSpot}
-              className="hidden sm:inline-flex gap-1.5"
+              className="hidden text-xs sm:inline-flex"
             >
-              <PlusCircle className="h-3.5 w-3.5" />
               List your spot
+            </Button>
+
+            {/* Mobile icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleListSpot}
+              aria-label="List your spot"
+              className="sm:hidden h-8 w-8"
+            >
+              <Plus className="h-4 w-4" />
             </Button>
 
             {isSignedIn ? (
               <UserButton />
             ) : (
-              <Button size="sm" onClick={() => openSignIn({})} className="cursor-pointer">
-                Sign In
+              <Button
+                size="sm"
+                onClick={() => openSignIn({})}
+                className="text-xs"
+              >
+                Sign in
               </Button>
             )}
           </div>
         </div>
       </header>
 
-      {/* AddSpot modal — only mounted when signed in */}
       {isSignedIn && (
         <AddSpotModal
           open={addSpotOpen}
