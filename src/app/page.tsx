@@ -18,11 +18,21 @@ const CARDS = [
     href: "/park",
     emoji: "🅿️",
     title: "Find Nearby RWA Parking",
-    desc: "Locate verified visitor parking slots in Bengaluru RWA hubs within walking distance.",
-    cta: "Find Slots →",
+    desc: "Locate verified visitor parking slots in Bengaluru RWA hubs and request a spot.",
+    cta: "Find & Request Slots →",
     bg: "from-blue-50 to-sky-50",
     border: "border-blue-200",
     btn: "bg-blue-600 hover:bg-blue-700",
+  },
+  {
+    href: "/owner-portal",
+    emoji: "🏘️",
+    title: "Owner / Association Portal",
+    desc: "RWA owners: review visitor parking requests and accept or decline them in one tap.",
+    cta: "Open Owner Portal →",
+    bg: "from-teal-50 to-emerald-50",
+    border: "border-teal-200",
+    btn: "bg-teal-700 hover:bg-teal-800",
   },
   {
     href: "/rwa-admin",
@@ -33,6 +43,16 @@ const CARDS = [
     bg: "from-violet-50 to-purple-50",
     border: "border-violet-200",
     btn: "bg-violet-600 hover:bg-violet-700",
+  },
+  {
+    href: "/dashboard",
+    emoji: "📊",
+    title: "Analytics Dashboard",
+    desc: "See how many slots have been allotted and total revenue generated across all RWA hubs.",
+    cta: "View Analytics →",
+    bg: "from-slate-50 to-gray-50",
+    border: "border-slate-200",
+    btn: "bg-slate-700 hover:bg-slate-800",
   },
 ];
 
@@ -83,7 +103,7 @@ export default function HomePage() {
       </header>
 
       {/* Cards */}
-      <section className="max-w-5xl mx-auto px-4 py-6 grid gap-5 sm:grid-cols-3">
+      <section className="max-w-5xl mx-auto px-4 py-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {CARDS.map((c) => (
           <div
             key={c.href}

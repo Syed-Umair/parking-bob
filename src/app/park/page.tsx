@@ -60,14 +60,26 @@ function slotColor(available: number, total: number) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+// ─── Request form state shape ─────────────────────────────────────────────────
+
+interface RequestForm {
+  slot: RwaSlot;
+  requesterName: string;
+  requesterPhone: string;
+  vehiclePlate: string;
+  durationHours: number;
+}
+
 export default function ParkPage() {
   const [activeLocality, setActiveLocality] = useState(LOCALITIES[0]);
   const [slots, setSlots] = useState<RwaSlot[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [bookedId, setBookedId] = useState<string | null>(null);
-  const [bookingId, setBookingId] = useState<string | null>(null); // which slot is being booked
-  const [qrPass, setQrPass] = useState<{ slotId: string; rwaName: string } | null>(null);
+
+  // Request-a-slot flow state
+  const [requestForm, setRequestForm] = useState<RequestForm | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<{ slotId: string; rwaName: string } | null>(null);
 
   const fetchSlots = useCallback(async (loc: typeof LOCALITIES[0]) => {
     setLoading(true);
@@ -93,69 +105,162 @@ export default function ParkPage() {
     fetchSlots(activeLocality);
   }, [activeLocality, fetchSlots]);
 
-  async function handleBook(slot: RwaSlot) {
-    if (slot.availableSlots <= 0) return;
-    setBookingId(slot._id);
+  function openRequestForm(slot: RwaSlot) {
+    setError("");
+    setRequestForm({
+      slot,
+      requesterName: "",
+      requesterPhone: "",
+      vehiclePlate: "",
+      durationHours: 1,
+    });
+  }
+
+  async function handleSubmitRequest(e: React.FormEvent) {
+    e.preventDefault();
+    if (!requestForm) return;
+    setSubmitting(true);
+    setError("");
     try {
-      const res = await fetch("/api/slots", {
-        method: "PATCH",
+      const res = await fetch("/api/parking-requests", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slotId: slot._id, action: "BOOK" }),
+        body: JSON.stringify({
+          rwaSlotId:      requestForm.slot._id,
+          rwaName:        requestForm.slot.rwaName,
+          requesterName:  requestForm.requesterName,
+          requesterPhone: requestForm.requesterPhone,
+          vehiclePlate:   requestForm.vehiclePlate,
+          durationHours:  requestForm.durationHours,
+        }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
-      setBookedId(slot._id);
-      setQrPass({ slotId: slot._id, rwaName: slot.rwaName });
-      setSlots((prev) =>
-        prev.map((s) => (s._id === slot._id ? data.slot : s))
-      );
+      setSubmitted({ slotId: requestForm.slot._id, rwaName: requestForm.slot.rwaName });
+      setRequestForm(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Booking failed.");
+      setError(e instanceof Error ? e.message : "Request failed.");
     } finally {
-      setBookingId(null);
+      setSubmitting(false);
     }
   }
 
-  // ─── QR Pass Modal ──────────────────────────────────────────────────────────
+  // ─── Request form overlay ────────────────────────────────────────────────────
 
-  if (qrPass) {
-    const passCode = `BLR-PASS-${qrPass.slotId.slice(-6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+  if (requestForm) {
+    const { slot } = requestForm;
     return (
       <main className="min-h-screen bg-slate-50 pb-16">
         <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setQrPass(null)} className="text-white/80 hover:text-white text-lg">←</button>
-          <div className="font-bold text-sm">Gate QR Pass</div>
+          <button onClick={() => setRequestForm(null)} className="text-white/80 hover:text-white text-lg">←</button>
+          <div>
+            <div className="font-bold text-sm">Request a Parking Slot</div>
+            <div className="text-blue-200 text-xs truncate max-w-xs">{slot.rwaName}</div>
+          </div>
+        </div>
+
+        <div className="max-w-md mx-auto px-4 pt-6 space-y-4">
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 space-y-1">
+            <h3 className="font-semibold text-slate-800 text-sm">{slot.rwaName}</h3>
+            <p className="text-xs text-slate-500">{slot.locality} · ₹{slot.hourlyRateINR}/hr · {slot.openHours}</p>
+            <p className="text-xs text-emerald-600 font-semibold mt-1">
+              {slot.availableSlots} slots free
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmitRequest} className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 space-y-4">
+            <h3 className="font-semibold text-slate-700 text-sm">Your Details</h3>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name</label>
+                <input
+                  required
+                  value={requestForm.requesterName}
+                  onChange={(e) => setRequestForm((f) => f && { ...f, requesterName: e.target.value })}
+                  placeholder="e.g. Arjun Sharma"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Phone Number</label>
+                <input
+                  required
+                  value={requestForm.requesterPhone}
+                  onChange={(e) => setRequestForm((f) => f && { ...f, requesterPhone: e.target.value })}
+                  placeholder="+91-98****1234"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Vehicle Plate</label>
+                <input
+                  required
+                  value={requestForm.vehiclePlate}
+                  onChange={(e) => setRequestForm((f) => f && { ...f, vehiclePlate: e.target.value })}
+                  placeholder="KA-01-MJ-1234"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Duration (hours)</label>
+                <select
+                  value={requestForm.durationHours}
+                  onChange={(e) => setRequestForm((f) => f && { ...f, durationHours: Number(e.target.value) })}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-800 bg-white"
+                >
+                  {[1, 2, 3, 4, 6, 8].map((h) => (
+                    <option key={h} value={h}>{h} hour{h > 1 ? "s" : ""} · ₹{slot.hourlyRateINR * h}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+            >
+              {submitting ? "Sending Request…" : "📨 Send Parking Request to Owner"}
+            </button>
+            <p className="text-xs text-slate-400 text-center">
+              The RWA owner will accept or decline your request. You'll see the status on confirmation.
+            </p>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
+  // ─── Submission confirmation ──────────────────────────────────────────────────
+
+  if (submitted) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-16">
+        <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-3">
+          <button onClick={() => setSubmitted(null)} className="text-white/80 hover:text-white text-lg">←</button>
+          <div className="font-bold text-sm">Request Submitted</div>
         </div>
         <div className="max-w-md mx-auto px-4 pt-8 space-y-6 text-center">
           <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-8 space-y-4">
-            <div className="text-5xl">🎟️</div>
-            <h2 className="text-xl font-bold text-slate-800">Visitor Slot Booked!</h2>
-            <p className="text-sm text-slate-500">{qrPass.rwaName}</p>
-
-            {/* Fake QR code using CSS grid pattern */}
-            <div className="mx-auto w-40 h-40 grid grid-cols-10 gap-0.5 p-3 bg-white border-2 border-slate-800 rounded-lg">
-              {Array.from({ length: 100 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`rounded-sm ${
-                    // deterministic pattern from passCode chars
-                    (passCode.charCodeAt(i % passCode.length) + i) % 3 === 0
-                      ? "bg-slate-800"
-                      : "bg-white"
-                  }`}
-                />
-              ))}
-            </div>
-
-            <div className="font-mono text-sm bg-slate-100 rounded-lg px-4 py-2 text-slate-700 tracking-widest">
-              {passCode}
-            </div>
-            <p className="text-xs text-slate-400">
-              Show this QR at the gate. Valid for 2 hours from booking.
+            <div className="text-5xl">📨</div>
+            <h2 className="text-xl font-bold text-slate-800">Request Sent!</h2>
+            <p className="text-sm text-slate-500">{submitted.rwaName}</p>
+            <p className="text-sm text-slate-600">
+              Your parking request has been submitted to the RWA owner.
+              They will review and accept or decline it shortly.
             </p>
+            <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-xs text-teal-700">
+              💡 The owner can review your request at the{" "}
+              <a href="/owner-portal" className="font-semibold underline">Owner Portal</a>.
+            </div>
           </div>
           <button
-            onClick={() => setQrPass(null)}
+            onClick={() => setSubmitted(null)}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
           >
             ← Find Another Slot
@@ -245,14 +350,13 @@ export default function ParkPage() {
             );
             const color = slotColor(slot.availableSlots, slot.totalSlots);
             const fillPct = Math.round((slot.availableSlots / slot.totalSlots) * 100);
-            const isBooked = bookedId === slot._id;
-            const isBooking = bookingId === slot._id;
+            const isRequested = submitted?.slotId === slot._id;
 
             return (
               <div
                 key={slot._id}
                 className={`rounded-2xl bg-white border shadow-sm p-5 space-y-3 transition-shadow hover:shadow-md ${
-                  isBooked ? "border-emerald-400 ring-1 ring-emerald-300" : "border-slate-200"
+                  isRequested ? "border-teal-400 ring-1 ring-teal-300" : "border-slate-200"
                 }`}
               >
                 {/* Header */}
@@ -293,25 +397,23 @@ export default function ParkPage() {
                 </div>
 
                 {/* CTA */}
-                {isBooked ? (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-center">
-                    <span className="text-sm font-semibold text-emerald-700">✅ Slot Booked — Pass Generated</span>
+                {submitted?.slotId === slot._id ? (
+                  <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5 text-center">
+                    <span className="text-sm font-semibold text-teal-700">📨 Request Sent — Awaiting Owner Approval</span>
                   </div>
                 ) : (
                   <button
-                    onClick={() => handleBook(slot)}
-                    disabled={slot.availableSlots <= 0 || !!bookingId}
+                    onClick={() => openRequestForm(slot)}
+                    disabled={slot.availableSlots <= 0}
                     className={`w-full text-sm font-semibold py-2.5 rounded-xl transition-colors ${
                       slot.availableSlots <= 0
                         ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60"
+                        : "bg-blue-600 hover:bg-blue-700 text-white"
                     }`}
                   >
-                    {isBooking
-                      ? "Booking…"
-                      : slot.availableSlots <= 0
+                    {slot.availableSlots <= 0
                       ? "🚫 Full — No Slots Available"
-                      : "🅿️ Book Visitor Slot & Generate Gate QR Pass"}
+                      : "📨 Request Visitor Slot"}
                   </button>
                 )}
               </div>

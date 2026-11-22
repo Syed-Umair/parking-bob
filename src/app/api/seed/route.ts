@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
-import { Vehicle, RwaSlot, ParkingIncident } from "@/lib/models";
+import { Vehicle, RwaSlot, ParkingIncident, Owner } from "@/lib/models";
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
@@ -95,6 +95,16 @@ const RWA_SLOTS = [
   },
 ] as const;
 
+// Owners are seeded after RWA slots so we can reference the slot's _id.
+// We seed one owner account per slot, keyed by rwaName.
+const OWNER_TEMPLATES = [
+  { name: "Salarpuria Sattva RWA",      email: "admin@salarpuria-hsr.rwa" },
+  { name: "Mantri Synergy RWA",          email: "admin@mantri-koramangala.rwa" },
+  { name: "Indiranagar RWA Association", email: "admin@indiranagar100ft.rwa" },
+  { name: "Bellandur Lake RWA",          email: "admin@bellandur-lake.rwa" },
+  { name: "Prestige Shantiniketan RWA",  email: "admin@prestige-whitefield.rwa" },
+] as const;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function runSeed(wipe = false) {
@@ -118,7 +128,7 @@ async function runSeed(wipe = false) {
   );
 
   // Upsert RWA slots (idempotent by rwaName)
-  const slotResults = await Promise.all(
+  const slotResults: Array<{ _id: string; rwaName: string }> = await Promise.all(
     RWA_SLOTS.map((s) =>
       (RwaSlot as any).findOneAndUpdate(
         { rwaName: s.rwaName },
@@ -128,9 +138,22 @@ async function runSeed(wipe = false) {
     )
   );
 
+  // Upsert owners — one per slot, matched by index (same order as RWA_SLOTS)
+  const ownerResults = await Promise.all(
+    OWNER_TEMPLATES.map((tmpl, idx) => {
+      const slot = slotResults[idx];
+      return (Owner as any).findOneAndUpdate(
+        { email: tmpl.email },
+        { $set: { name: tmpl.name, email: tmpl.email, rwaSlotId: String(slot._id) } },
+        { upsert: true, new: true }
+      );
+    })
+  );
+
   return {
     vehicles: vehicleResults.length,
     rwaSlots: slotResults.length,
+    owners: ownerResults.length,
   };
 }
 

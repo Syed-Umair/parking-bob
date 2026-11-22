@@ -66,7 +66,7 @@ export default function RwaAdminPage() {
   const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // ── Fetch all slots (use a central Bengaluru coord + large radius)
   const fetchSlots = useCallback(async () => {
@@ -348,11 +348,11 @@ export default function RwaAdminPage() {
             </h2>
             <span className="text-xs text-slate-400">
               Refreshed{" "}
-              {lastRefresh.toLocaleTimeString("en-IN", {
+              {lastRefresh?.toLocaleTimeString("en-IN", {
                 hour: "2-digit",
                 minute: "2-digit",
                 second: "2-digit",
-              })}
+              }) ?? "—"}
             </span>
           </div>
 
