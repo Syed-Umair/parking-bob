@@ -1,0 +1,505 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Parking Bob — watsonx Orchestrate Native Agent Configuration
+# Version: 1.0.0
+# Description: Bengaluru hyperlocal double-parking triage & RWA slot matcher
+# SOP reference: agents/triage_sop.md
+# ──────────────────────────────────────────────────────────────────────────────
+
+agent:
+  name: parking_bob
+  display_name: "Parking Bob — Bengaluru Parking Triage Agent"
+  description: >
+    AI agent for Bengaluru hyperlocal double-parking incident triage and RWA
+    visitor slot matching. Follows a strict 4-stage escalation ladder:
+    WhatsApp nudge (T+0) → privacy-masked voice call (T+5m) →
+    nearby RWA slot recommendation within 500m (T+15m) → Resolved.
+  version: "1.0.0"
+  language: en
+  tags:
+    - parking
+    - bengaluru
+    - rwa
+    - double-parking
+    - triage
+
+  # ── LLM configuration ────────────────────────────────────────────────────────
+  llm:
+    provider: watsonx
+    model_id: ibm/granite-3-3-8b-instruct
+    parameters:
+      temperature: 0.1        # low temperature for deterministic triage decisions
+      max_new_tokens: 512
+      repetition_penalty: 1.1
+
+  # ── System prompt ─────────────────────────────────────────────────────────────
+  system_prompt: |
+    You are Parking Bob, a Bengaluru hyperlocal parking triage AI agent.
+    Your job is to manage double-parking and RWA visitor slot incidents in
+    residential communities across Bengaluru (HSR Layout, Koramangala,
+    Indiranagar, Bellandur, Whitefield, and surrounding areas).
+
+    ## Core rules
+    1. ALWAYS follow the escalation ladder in order:
+       WHATSAPP_NUDGE → MASKED_CALL → ALT_SLOT_OFFERED → RESOLVED
+    2. NEVER skip a stage or escalate backwards.
+    3. NEVER reveal full plate numbers or phone numbers. Only use masked forms.
+    4. When searching for alternative slots, use radius=500 first; expand to
+       1000m only if no slots are found within 500m.
+    5. ALWAYS include ₹/hr rate and open hours when recommending a slot.
+    6. If the vehicle's qrToken is not registered, tell the user to contact
+       their RWA office — do not create a phantom incident.
+
+    ## Privacy
+    - Masked plate format: KA-01-MJ-**** (last 4 chars hidden)
+    - Masked phone format: +91-98****1234 (middle 4 digits hidden)
+    - Never log or display full identifiers in any output.
+
+    ## Response style
+    - Be concise, friendly, and use Kannada greetings (Namaskara, Dhanyavadagalu)
+      where appropriate.
+    - Always end actionable messages with "— Parking Bob 🙏"
+
+# ── Tools (OpenAPI-backed) ────────────────────────────────────────────────────
+tools:
+
+  # ── List / search RWA parking slots near a location ──────────────────────────
+  - tool_id: get_nearby_slots
+    name: "Get Nearby RWA Slots"
+    description: >
+      Returns RWA visitor parking slots within a given radius of the specified
+      coordinates. Used at T+15m escalation to find an alternative slot for a
+      blocking vehicle. Always try radius=500 first, expand to 1000 if empty.
+    type: openapi
+    openapi:
+      operation_id: getNearbySlots
+      spec_inline:
+        openapi: "3.1.0"
+        info:
+          title: Parking Bob Slots API
+          version: "1.0.0"
+        servers:
+          - url: "${NEXT_PUBLIC_APP_URL}"
+        paths:
+          /api/slots:
+            get:
+              operationId: getNearbySlots
+              summary: Find RWA parking slots near a location
+              parameters:
+                - name: lat
+                  in: query
+                  required: true
+                  schema:
+                    type: number
+                    example: 12.9352
+                  description: Latitude of search origin (decimal degrees)
+                - name: lng
+                  in: query
+                  required: true
+                  schema:
+                    type: number
+                    example: 77.6245
+                  description: Longitude of search origin (decimal degrees)
+                - name: radius
+                  in: query
+                  required: false
+                  schema:
+                    type: number
+                    default: 500
+                    minimum: 100
+                    maximum: 5000
+                  description: Search radius in metres (default 500, max 5000)
+              responses:
+                "200":
+                  description: List of nearby RWA slots sorted by distance
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                          count:
+                            type: integer
+                          slots:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/RwaSlot"
+                "400":
+                  description: Missing lat or lng parameter
+        components:
+          schemas:
+            RwaSlot:
+              type: object
+              properties:
+                _id:
+                  type: string
+                rwaName:
+                  type: string
+                locality:
+                  type: string
+                hourlyRateINR:
+                  type: number
+                availableSlots:
+                  type: integer
+                totalSlots:
+                  type: integer
+                openHours:
+                  type: string
+                location:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [Point]
+                    coordinates:
+                      type: array
+                      items:
+                        type: number
+                      minItems: 2
+                      maxItems: 2
+
+  # ── Book or release a visitor slot ───────────────────────────────────────────
+  - tool_id: update_slot
+    name: "Book or Release Visitor Slot"
+    description: >
+      Books (decrements availableSlots) or releases (increments availableSlots)
+      a visitor parking slot. Call with action=BOOK only after the vehicle owner
+      confirms they are moving to the offered slot.
+    type: openapi
+    openapi:
+      operation_id: updateSlot
+      spec_inline:
+        openapi: "3.1.0"
+        info:
+          title: Parking Bob Slots API
+          version: "1.0.0"
+        servers:
+          - url: "${NEXT_PUBLIC_APP_URL}"
+        paths:
+          /api/slots:
+            patch:
+              operationId: updateSlot
+              summary: Book or release a visitor parking slot
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      required: [slotId, action]
+                      properties:
+                        slotId:
+                          type: string
+                          description: MongoDB _id of the RWA slot
+                        action:
+                          type: string
+                          enum: [BOOK, RELEASE]
+                          description: BOOK decrements, RELEASE increments availableSlots
+              responses:
+                "200":
+                  description: Updated slot object
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                          slot:
+                            $ref: "#/components/schemas/RwaSlot"
+                "400":
+                  description: Missing or invalid parameters
+                "404":
+                  description: Slot not found
+                "409":
+                  description: No slots available (BOOK) or already at max (RELEASE)
+        components:
+          schemas:
+            RwaSlot:
+              type: object
+              properties:
+                _id:
+                  type: string
+                rwaName:
+                  type: string
+                availableSlots:
+                  type: integer
+                totalSlots:
+                  type: integer
+
+  # ── Get incidents for a vehicle ───────────────────────────────────────────────
+  - tool_id: get_incidents
+    name: "Get Parking Incidents"
+    description: >
+      Returns all parking incidents for a given QR token, or all incidents if
+      no token is provided. Use to check whether an active incident already exists
+      before creating a duplicate.
+    type: openapi
+    openapi:
+      operation_id: getIncidents
+      spec_inline:
+        openapi: "3.1.0"
+        info:
+          title: Parking Bob Incidents API
+          version: "1.0.0"
+        servers:
+          - url: "${NEXT_PUBLIC_APP_URL}"
+        paths:
+          /api/incidents:
+            get:
+              operationId: getIncidents
+              summary: List parking incidents
+              parameters:
+                - name: qrToken
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                    example: BLR-001
+                  description: Filter by vehicle QR token (omit to list all)
+              responses:
+                "200":
+                  description: List of incidents
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                          count:
+                            type: integer
+                          incidents:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/ParkingIncident"
+        components:
+          schemas:
+            ParkingIncident:
+              type: object
+              properties:
+                _id:
+                  type: string
+                qrToken:
+                  type: string
+                issueType:
+                  type: string
+                  enum: [BLOCKING_GATE, DOUBLE_PARKED, NO_PARKING_ZONE]
+                escalationStage:
+                  type: string
+                  enum: [WHATSAPP_NUDGE, MASKED_CALL, ALT_SLOT_OFFERED, RESOLVED]
+                createdAt:
+                  type: string
+                  format: date-time
+
+  # ── Create a new incident ─────────────────────────────────────────────────────
+  - tool_id: create_incident
+    name: "Create Parking Incident"
+    description: >
+      Opens a new double-parking or blocking incident for a vehicle identified
+      by its QR token. Automatically sets escalationStage to WHATSAPP_NUDGE and
+      updates the vehicle status to BLOCKING_REPORTED. This is the T+0 action.
+    type: openapi
+    openapi:
+      operation_id: createIncident
+      spec_inline:
+        openapi: "3.1.0"
+        info:
+          title: Parking Bob Incidents API
+          version: "1.0.0"
+        servers:
+          - url: "${NEXT_PUBLIC_APP_URL}"
+        paths:
+          /api/incidents:
+            post:
+              operationId: createIncident
+              summary: Report a new parking incident
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      required: [qrToken, issueType]
+                      properties:
+                        qrToken:
+                          type: string
+                          example: BLR-001
+                          description: QR token from the windshield sticker
+                        issueType:
+                          type: string
+                          enum: [BLOCKING_GATE, DOUBLE_PARKED, NO_PARKING_ZONE]
+              responses:
+                "201":
+                  description: Incident created
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                          message:
+                            type: string
+                          incident:
+                            $ref: "#/components/schemas/ParkingIncident"
+                "400":
+                  description: Missing or invalid fields
+                "404":
+                  description: Vehicle not found for given qrToken
+        components:
+          schemas:
+            ParkingIncident:
+              type: object
+              properties:
+                _id:
+                  type: string
+                qrToken:
+                  type: string
+                issueType:
+                  type: string
+                escalationStage:
+                  type: string
+                createdAt:
+                  type: string
+                  format: date-time
+
+  # ── Escalate an existing incident ─────────────────────────────────────────────
+  - tool_id: escalate_incident
+    name: "Escalate Parking Incident"
+    description: >
+      Advances an existing incident to the next escalation stage. Stages are
+      strictly forward-only: WHATSAPP_NUDGE → MASKED_CALL → ALT_SLOT_OFFERED →
+      RESOLVED. When set to RESOLVED, the vehicle status resets to PARKED.
+    type: openapi
+    openapi:
+      operation_id: escalateIncident
+      spec_inline:
+        openapi: "3.1.0"
+        info:
+          title: Parking Bob Incidents API
+          version: "1.0.0"
+        servers:
+          - url: "${NEXT_PUBLIC_APP_URL}"
+        paths:
+          /api/incidents:
+            patch:
+              operationId: escalateIncident
+              summary: Advance incident to next escalation stage
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      required: [incidentId, escalationStage]
+                      properties:
+                        incidentId:
+                          type: string
+                          description: MongoDB _id of the incident
+                        escalationStage:
+                          type: string
+                          enum: [MASKED_CALL, ALT_SLOT_OFFERED, RESOLVED]
+                          description: Target stage (must be ahead of current)
+              responses:
+                "200":
+                  description: Incident updated
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                          message:
+                            type: string
+                          incident:
+                            $ref: "#/components/schemas/ParkingIncident"
+                "400":
+                  description: Missing parameters or invalid stage
+                "404":
+                  description: Incident not found
+                "409":
+                  description: Backward escalation attempted (forward-only rule)
+        components:
+          schemas:
+            ParkingIncident:
+              type: object
+              properties:
+                _id:
+                  type: string
+                escalationStage:
+                  type: string
+
+# ── Orchestration flows ───────────────────────────────────────────────────────
+flows:
+
+  - flow_id: triage_double_parking
+    name: "Triage Double-Parking Incident"
+    description: >
+      Full 4-stage triage flow for a reported blocking or double-parked vehicle.
+    trigger:
+      type: user_message
+      intent_keywords: [blocking, double parked, gate blocked, no parking, QR, windshield]
+    steps:
+      - step_id: check_existing
+        tool: get_incidents
+        description: "Check for active incident on this qrToken before creating duplicate"
+
+      - step_id: create_incident
+        tool: create_incident
+        description: "Create incident at WHATSAPP_NUDGE stage (T+0)"
+        condition: "no active incident found in check_existing"
+
+      - step_id: wait_5m
+        type: timer
+        duration_minutes: 5
+        description: "Wait 5 minutes for owner response"
+
+      - step_id: escalate_to_call
+        tool: escalate_incident
+        description: "Advance to MASKED_CALL if not yet resolved (T+5m)"
+        input:
+          escalationStage: MASKED_CALL
+        condition: "incident.escalationStage === 'WHATSAPP_NUDGE'"
+
+      - step_id: wait_10m
+        type: timer
+        duration_minutes: 10
+        description: "Wait 10 more minutes (T+15m total)"
+
+      - step_id: find_alt_slot
+        tool: get_nearby_slots
+        description: "Search for available slot within 500m of incident location"
+        input:
+          radius: 500
+
+      - step_id: escalate_to_slot
+        tool: escalate_incident
+        description: "Advance to ALT_SLOT_OFFERED and send slot recommendation"
+        input:
+          escalationStage: ALT_SLOT_OFFERED
+        condition: "incident.escalationStage === 'MASKED_CALL'"
+
+  - flow_id: resolve_incident
+    name: "Resolve Parking Incident"
+    description: "Mark an active incident as resolved (vehicle moved)"
+    trigger:
+      type: user_message
+      intent_keywords: [resolved, moved, vehicle gone, all clear, mark resolved]
+    steps:
+      - step_id: resolve
+        tool: escalate_incident
+        input:
+          escalationStage: RESOLVED
+
+# ── Environment variables required ───────────────────────────────────────────
+environment:
+  NEXT_PUBLIC_APP_URL:
+    description: "Base URL of the deployed Parking Bob Next.js app"
+    example: "https://parking-bob.vercel.app"
+    required: true
+  MONGODB_URI:
+    description: "MongoDB connection string (optional — in-memory fallback used if absent)"
+    example: "mongodb+srv://user:pass@cluster.mongodb.net/parking-bob"
+    required: false

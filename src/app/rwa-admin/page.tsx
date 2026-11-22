@@ -111,6 +111,7 @@ export default function RwaAdminPage() {
   useEffect(() => {
     fetchSlots();
     fetchIncidents();
+    setLastRefresh(new Date());
   }, [fetchSlots, fetchIncidents]);
 
   // Auto-refresh incidents every 15s
@@ -347,12 +348,9 @@ export default function RwaAdminPage() {
               Double-Parking Incident Feed
             </h2>
             <span className="text-xs text-slate-400">
-              Refreshed{" "}
-              {lastRefresh?.toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              }) ?? "—"}
+              {lastRefresh
+                ? `Refreshed ${lastRefresh.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                : "Loading…"}
             </span>
           </div>
 
