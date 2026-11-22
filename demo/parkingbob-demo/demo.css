@@ -1,0 +1,256 @@
+/* parkingBob demo — dark slate/navy + electric-blue
+   Based on ai-cards gold example. Stage is dark, accent is #2563EB. */
+
+/* Override kit tokens for dark slate theme */
+.pb .ss-stage {
+  overflow: hidden;
+  background: #0F172A;
+  --ss-accent: #2563EB;
+  --ss-accent-soft: rgba(37, 99, 235, 0.15);
+  --ss-accent-text: #93c5fd;
+  --ss-surface: #1e293b;
+  --ss-well: #0F172A;
+  --ss-line: rgba(148, 163, 184, 0.15);
+  --ss-line-strong: rgba(148, 163, 184, 0.3);
+  --ss-ink-1: rgba(148, 163, 184, 0.12);
+  --ss-ink-2: rgba(148, 163, 184, 0.06);
+  --ss-text: #94a3b8;
+  --ss-text-strong: #e2e8f0;
+  --ss-success: #22c55e;
+}
+
+/* Window: position off bottom, flush top and sides */
+.pb-win {
+  position: absolute;
+  top: 24px;
+  left: 40px;
+  width: 560px;
+  height: 500px;
+}
+
+.pb-body {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  padding: 16px 20px 54px;
+  background: #1e293b;
+}
+
+/* Thread anchored at bottom; older content scrolls up out of frame */
+.pb-thread {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  min-height: 0;
+  padding-bottom: 18px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 24px);
+}
+
+.pb-thread > * {
+  will-change: transform;
+}
+
+/* Earlier placeholder turn */
+.pb-past {
+  display: grid;
+  gap: 8px;
+}
+
+.pb-past-q {
+  justify-self: end;
+}
+
+/* User message bubble — right-aligned, blue-tinted */
+.pb-q {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pb-q .ss-text {
+  max-width: 78%;
+  white-space: normal;
+  text-wrap: pretty;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.4);
+  color: #bfdbfe;
+  font-size: 13px;
+}
+
+/* Thinking dots */
+.pb-thinking {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.pb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #475569;
+  animation: pb-bounce 1.2s ease-in-out infinite;
+}
+
+.pb-dot:nth-child(2) { animation-delay: 0.2s; }
+.pb-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes pb-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* AI answer area */
+.pb-a {
+  display: grid;
+  gap: 12px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.pb-a[data-on] {
+  opacity: 1;
+}
+
+.pb-stream {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+/* Spot cards container */
+.pb-spots {
+  display: grid;
+  gap: 6px;
+}
+
+/* Individual spot card */
+.pb-spot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.pb-spot[data-on] {
+  background: rgba(37, 99, 235, 0.12);
+  box-shadow: inset 0 0 0 1.5px rgba(37, 99, 235, 0.5);
+}
+
+.pb-spot__info {
+  display: grid;
+  gap: 3px;
+}
+
+.pb-spot__title {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pb-spot__meta {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.pb-spot__tags {
+  color: #475569;
+  font-size: 11px;
+}
+
+/* Rate + book button — right column */
+.pb-spot__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.pb-spot__rate {
+  color: #e2e8f0;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-spot__unit {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Book button — stacked layers, same cell */
+.pb-book-btn {
+  display: grid;
+  grid-template-areas: "stack";
+  place-items: center;
+  min-width: 70px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.pb-book-btn[data-ready] {
+  background: #2563EB;
+  color: #fff;
+}
+
+.pb-book-btn[data-done] {
+  background: #22c55e;
+  color: #fff;
+}
+
+.pb-layer {
+  grid-area: stack;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  filter: blur(2px);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.pb-layer[data-on] {
+  opacity: 1;
+  filter: none;
+  transition-delay: 0.06s;
+}
+
+.pb-book-btn .ss-check__ring { stroke: rgba(255,255,255,0.4); }
+.pb-book-btn .ss-check__arc { stroke: #fff; }
+.pb-book-btn .ss-check__fill { fill: #fff; }
+.pb-book-btn .ss-check__tick { stroke: #22c55e; }
+
+/* Composer field */
+.pb-composer {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  right: 20px;
+}
+
+/* Compact layout */
+.pb .ss-stage[data-layout="compact"] .pb-win {
+  left: 16px;
+  width: 326px;
+  height: 580px;
+}
+
+.pb .ss-stage[data-layout="compact"] .pb-body {
+  padding-inline: 14px;
+}
