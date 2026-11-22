@@ -2,66 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import db, { type Spot } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
-// Watsonx.ai helpers
+// IBM Bob API — OpenAI-compatible, Bearer key directly (no token exchange)
 // ---------------------------------------------------------------------------
 
-const WATSONX_URL = process.env.WATSONX_URL ?? "https://us-south.ml.cloud.ibm.com";
-const WATSONX_API_KEY = process.env.WATSONX_API_KEY ?? "";
-const WATSONX_PROJECT_ID = process.env.WATSONX_PROJECT_ID ?? "";
-const MODEL_ID = "ibm/granite-3-3-8b-instruct";
-const API_VERSION = "2024-05-31";
+const BOB_APIKEY = process.env.BOB_APIKEY ?? "";
+// BOB_GATEWAY_URL is the base URL of your Bob workshop inference gateway.
+// Set it in .env.local: BOB_GATEWAY_URL=https://<your-bob-gateway-host>
+const BOB_GATEWAY_URL = (process.env.BOB_GATEWAY_URL ?? "").replace(/\/$/, "");
+// Model name exposed by the Bob gateway (check /v1/models for the exact id)
+const BOB_MODEL = process.env.BOB_MODEL ?? "premium-ide";
 
-/** Exchange IBM Cloud API key for a short-lived IAM Bearer token */
-async function getIAMToken(): Promise<string> {
-  const res = await fetch("https://iam.cloud.ibm.com/identity/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ibm:params:oauth:grant-type:apikey",
-      apikey: WATSONX_API_KEY,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`IAM token fetch failed: ${res.status} ${await res.text()}`);
-  }
-  const data = await res.json() as { access_token: string };
-  return data.access_token;
-}
-
-interface WatsonxMessage {
+interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
 
-/** Call watsonx.ai chat completion */
-async function watsonxChat(
-  messages: WatsonxMessage[],
-  token: string,
-  maxTokens = 512
-): Promise<string> {
-  const res = await fetch(
-    `${WATSONX_URL}/ml/v1/text/chat?version=${API_VERSION}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        model_id: MODEL_ID,
-        project_id: WATSONX_PROJECT_ID,
-        messages,
-        parameters: {
-          max_new_tokens: maxTokens,
-          temperature: 0.3,
-        },
-      }),
-    }
-  );
+/** Call Bob's OpenAI-compatible chat completions endpoint */
+async function bobChat(messages: ChatMessage[], maxTokens = 400): Promise<string> {
+  const res = await fetch(`${BOB_GATEWAY_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${BOB_APIKEY}`,
+    },
+    body: JSON.stringify({
+      model: BOB_MODEL,
+      messages,
+      max_tokens: maxTokens,
+      temperature: 0.3,
+    }),
+  });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`watsonx.ai error ${res.status}: ${err}`);
+    throw new Error(`Bob API error ${res.status}: ${err}`);
   }
 
   const data = await res.json() as {
@@ -81,16 +55,16 @@ const KNOWN_AREAS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Intent extraction — ask the LLM to output JSON
+// Intent extraction — ask Bob to output JSON
 // ---------------------------------------------------------------------------
 const INTENT_SYSTEM_PROMPT = `You are a parking search assistant for Bengaluru.
 Extract search intent from the user's message and return ONLY valid JSON (no markdown, no explanation).
 JSON schema:
 {
-  "area": string | null,         // neighbourhood name, e.g. "Koramangala" — null if not mentioned
+  "area": string | null,
   "vehicle_size": "bike"|"car"|"suv"|null,
-  "max_rate": number | null,     // max hourly rate in INR — null if not mentioned
-  "is_parking_query": boolean    // true if the user wants to find/book parking
+  "max_rate": number | null,
+  "is_parking_query": boolean
 }`;
 
 interface Intent {
@@ -102,7 +76,6 @@ interface Intent {
 
 function parseIntent(raw: string): Intent {
   try {
-    // Strip markdown code fences if present
     const cleaned = raw.replace(/```(?:json)?/g, "").replace(/```/g, "").trim();
     return JSON.parse(cleaned) as Intent;
   } catch {
@@ -110,24 +83,19 @@ function parseIntent(raw: string): Intent {
   }
 }
 
-// ---------------------------------------------------------------------------
-// In-memory history store (per-session via cookie would be production-grade;
-// this keeps things simple and stateless — history is passed from the client)
-// ---------------------------------------------------------------------------
-
-export interface ChatMessage {
+export interface ConvMessage {
   role: "user" | "assistant";
   content: string;
 }
 
 // ---------------------------------------------------------------------------
 // POST /api/chat
-// Body: { message: string; history?: ChatMessage[] }
+// Body: { message: string; history?: ConvMessage[] }
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const message: string = body?.message ?? "";
-  const history: ChatMessage[] = Array.isArray(body?.history) ? body.history : [];
+  const history: ConvMessage[] = Array.isArray(body?.history) ? body.history : [];
 
   if (!message.trim()) {
     return NextResponse.json({
@@ -136,21 +104,17 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Check env vars are set
-  if (!WATSONX_API_KEY || !WATSONX_PROJECT_ID) {
-    // Fall back to rule-based if keys not configured
+  // Check Bob API is configured
+  if (!BOB_APIKEY || !BOB_GATEWAY_URL) {
     return ruleBasedFallback(message);
   }
 
   try {
-    const token = await getIAMToken();
-
-    // ── Step 1: extract intent ───────────────────────────────────────────
-    const intentMessages: WatsonxMessage[] = [
-      { role: "system", content: INTENT_SYSTEM_PROMPT },
-      { role: "user", content: message },
-    ];
-    const intentRaw = await watsonxChat(intentMessages, token, 128);
+    // ── Step 1: extract intent via Bob ──────────────────────────────────
+    const intentRaw = await bobChat(
+      [{ role: "system", content: INTENT_SYSTEM_PROMPT }, { role: "user", content: message }],
+      128
+    );
     const intent = parseIntent(intentRaw);
 
     // ── Step 2: query SQLite ─────────────────────────────────────────────
@@ -160,7 +124,6 @@ export async function POST(request: NextRequest) {
       const params: (string | number)[] = [];
 
       if (intent.area) {
-        // Fuzzy match — LLM may return partial names
         const normalised = intent.area.toLowerCase();
         const matched = KNOWN_AREAS.find((a) => normalised.includes(a) || a.includes(normalised));
         if (matched) {
@@ -181,43 +144,34 @@ export async function POST(request: NextRequest) {
       spots = db.prepare(query).all(...params) as Spot[];
     }
 
-    // ── Step 3: generate conversational reply ────────────────────────────
-    const spotSummary =
-      spots.length > 0
-        ? spots
-            .map(
-              (s, i) =>
-                `${i + 1}. ${s.title} — ${s.area}, ₹${s.hourly_rate}/hr, ${s.vehicle_size}, ${s.amenities || "no amenities listed"}`
-            )
-            .join("\n")
-        : intent.is_parking_query
-        ? "No spots found matching those filters."
-        : "";
+    // ── Step 3: generate reply via Bob ───────────────────────────────────
+    const spotSummary = spots.length > 0
+      ? spots.map((s, i) =>
+          `${i + 1}. ${s.title} — ${s.area}, ₹${s.hourly_rate}/hr, ${s.vehicle_size}, ${s.amenities || "no amenities"}`
+        ).join("\n")
+      : intent.is_parking_query ? "No spots found matching those filters." : "";
 
-    const replySystemPrompt = `You are parkingBob, a friendly parking concierge for Bengaluru.
-Keep replies short (2–4 sentences). Be conversational and helpful.
-${spots.length > 0 ? `The following spots were found:\n${spotSummary}\nMention the top 1–2 options naturally.` : ""}
-${intent.is_parking_query && spots.length === 0 ? "No spots matched. Suggest the user try a different area or loosen filters." : ""}
-${!intent.is_parking_query ? "Answer the user's question helpfully. If they seem lost, guide them to search for parking." : ""}`;
+    const replySystemPrompt = `You are parkingBob, a friendly parking concierge for Bengaluru. Keep replies short (2–4 sentences). Be conversational and helpful.
+${spots.length > 0 ? `Spots found:\n${spotSummary}\nMention the top 1–2 options naturally.` : ""}
+${intent.is_parking_query && spots.length === 0 ? "No spots matched. Suggest trying a different area or loosening filters." : ""}
+${!intent.is_parking_query ? "Answer helpfully. Guide lost users toward parking search." : ""}`;
 
-    const replyMessages: WatsonxMessage[] = [
+    const replyMessages: ChatMessage[] = [
       { role: "system", content: replySystemPrompt },
-      // Include recent conversation history (last 6 turns)
       ...history.slice(-6).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user", content: message },
     ];
-    const reply = await watsonxChat(replyMessages, token, 256);
+    const reply = await bobChat(replyMessages, 256);
 
     return NextResponse.json({ reply: reply.trim(), spots, intent });
   } catch (err) {
-    console.error("watsonx.ai error:", err);
-    // Graceful fallback to rule-based on API failure
+    console.error("Bob API error:", err);
     return ruleBasedFallback(message);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Rule-based fallback (used when API keys not set or on error)
+// Rule-based fallback
 // ---------------------------------------------------------------------------
 function ruleBasedFallback(message: string) {
   const lower = message.toLowerCase();

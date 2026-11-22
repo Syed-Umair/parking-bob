@@ -212,7 +212,7 @@ export default function ChatPage() {
           </Button>
         </div>
         <p className="mt-2 text-center text-[10px] text-muted-foreground">
-          Powered by IBM watsonx.ai · Granite 3.3
+          Powered by IBM Bob AI
         </p>
       </div>
     </div>
