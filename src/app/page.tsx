@@ -1,69 +1,133 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import Link from "next/link";
+
+const CARDS = [
+  {
+    href: "/scan/BLR-001",
+    emoji: "📷",
+    title: "Scan Windshield QR",
+    desc: "Report a blocking or double-parked vehicle using the sticker QR on its windshield.",
+    cta: "Scan & Report →",
+    bg: "from-orange-50 to-amber-50",
+    border: "border-orange-200",
+    btn: "bg-orange-500 hover:bg-orange-600",
+  },
+  {
+    href: "/park",
+    emoji: "🅿️",
+    title: "Find Nearby RWA Parking",
+    desc: "Locate verified visitor parking slots in Bengaluru RWA hubs within walking distance.",
+    cta: "Find Slots →",
+    bg: "from-blue-50 to-sky-50",
+    border: "border-blue-200",
+    btn: "bg-blue-600 hover:bg-blue-700",
+  },
+  {
+    href: "/rwa-admin",
+    emoji: "🏢",
+    title: "RWA Facility Admin",
+    desc: "Manage visitor slot counts, hourly rates, and monitor live double-parking incidents.",
+    cta: "Open Dashboard →",
+    bg: "from-violet-50 to-purple-50",
+    border: "border-violet-200",
+    btn: "bg-violet-600 hover:bg-violet-700",
+  },
+];
+
+export default function HomePage() {
+  const [seedStatus, setSeedStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [seedMsg, setSeedMsg] = useState("");
+
+  async function handleSeed() {
+    setSeedStatus("loading");
+    try {
+      const res = await fetch("/api/seed");
+      const data = await res.json();
+      if (data.ok) {
+        setSeedStatus("success");
+        setSeedMsg(
+          `✅ Seeded ${data.seeded.vehicles} vehicles + ${data.seeded.rwaSlots} RWA slots`
+        );
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (e: unknown) {
+      setSeedStatus("error");
+      setSeedMsg(`❌ ${e instanceof Error ? e.message : "Unknown error"}`);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+      {/* Header */}
+      <header className="px-6 pt-12 pb-6 text-center">
+        <div className="text-5xl mb-3">🚗</div>
+        <h1 className="text-4xl font-bold tracking-tight">Parking Bob</h1>
+        <p className="mt-2 text-slate-400 text-lg max-w-md mx-auto">
+          Bengaluru's hyperlocal parking &amp; double-parking triage platform
+        </p>
+        <div className="mt-2 flex flex-wrap justify-center gap-2 text-sm">
+          {["HSR Layout", "Koramangala", "Indiranagar", "Bellandur", "Whitefield"].map((loc) => (
+            <span
+              key={loc}
+              className="px-3 py-0.5 rounded-full bg-slate-700 text-slate-300 font-medium"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              {loc}
+            </span>
+          ))}
+        </div>
+      </header>
+
+      {/* Cards */}
+      <section className="max-w-5xl mx-auto px-4 py-6 grid gap-5 sm:grid-cols-3">
+        {CARDS.map((c) => (
+          <div
+            key={c.href}
+            className={`rounded-2xl border ${c.border} bg-gradient-to-br ${c.bg} p-6 flex flex-col gap-4 shadow-sm`}
+          >
+            <div className="text-4xl">{c.emoji}</div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">{c.title}</h2>
+              <p className="mt-1 text-sm text-slate-600 leading-relaxed">{c.desc}</p>
+            </div>
+            <Link
+              href={c.href}
+              className={`mt-auto inline-block text-center text-white text-sm font-semibold px-5 py-2.5 rounded-xl ${c.btn} transition-colors`}
             >
-              Learning
-            </a>{" "}
-            center.
+              {c.cta}
+            </Link>
+          </div>
+        ))}
+      </section>
+
+      {/* Seed section */}
+      <section className="max-w-md mx-auto px-4 pb-16 text-center">
+        <div className="rounded-2xl border border-slate-600 bg-slate-800/60 p-6">
+          <p className="text-sm text-slate-400 mb-4">
+            First time? Seed realistic Bengaluru demo data into the database.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={handleSeed}
+            disabled={seedStatus === "loading"}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            {seedStatus === "loading" ? "Seeding…" : "🌱 Seed Bengaluru Demo Data"}
+          </button>
+          {seedMsg && (
+            <p
+              className={`mt-3 text-sm font-medium ${
+                seedStatus === "success" ? "text-emerald-400" : "text-red-400"
+              }`}
+            >
+              {seedMsg}
+            </p>
+          )}
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }
